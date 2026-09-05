@@ -1,0 +1,114 @@
+'use strict';
+
+/**
+ * LLM abstraction layer.
+ *
+ * Design goal: nothing else in the codebase should know it's talking to
+ * Ollama specifically. Every caller uses generate({...}) / summarize({...}).
+ * To add a new provider (OpenAI-compatible endpoint, llama.cpp server, etc.)
+ * implement the same two methods and swap it in `createLlmClient()`.
+ *
+ * Vision support: if OLLAMA_VISION_MODEL is set and an image is attached,
+ * generate() automatically routes to the vision model with the image
+ * base64-encoded per Ollama's /api/generate `images` field. If no vision
+ * model is configured, images are gracefully degraded to "image + caption
+ * text" so the bot still responds sensibly instead of failing.
+ */
+
+const fs = require('fs');
+const axios = require('axios');
+const config = require('../config');
+const logger = require('../utils/logger');
+
+const SYSTEM_PROMPT_DEFAULT = require('../prompts/systemPrompt');
+
+function truncate(text, maxChars) {
+  if (!text) return text;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars - 1).trimEnd() + '…';
+}
+
+class OllamaClient {
+  constructor() {
+    this.baseUrl = config.llm.ollamaBaseUrl.replace(/\/+$/, '');
+    this.textModel = config.llm.textModel;
+    this.visionModel = config.llm.visionModel;
+    this.timeoutMs = config.llm.timeoutMs;
+  }
+
+  async _post(payload) {
+    const url = `${this.baseUrl}/api/generate`;
+    const res = await axios.post(url, { ...payload, stream: false }, { timeout: this.timeoutMs });
+    return (res.data && res.data.response ? res.data.response : '').trim();
+  }
+
+  /**
+   * @param {object} opts
+   * @param {string} opts.systemPrompt
+   * @param {string} opts.prompt - fully assembled user-facing prompt (context + question)
+   * @param {string} [opts.imagePath] - local filesystem path to an image, if any
+   */
+  async generate({ systemPrompt, prompt, imagePath }) {
+    const useVision = Boolean(imagePath) && Boolean(this.visionModel);
+    const model = useVision ? this.visionModel : this.textModel;
+
+    const payload = {
+      model,
+      system: systemPrompt || SYSTEM_PROMPT_DEFAULT,
+      prompt,
+    };
+
+    if (useVision) {
+      try {
+        const b64 = fs.readFileSync(imagePath).toString('base64');
+        payload.images = [b64];
+      } catch (err) {
+        logger.warn({ err: err.message, imagePath }, 'Failed to read image for vision model, falling back to text-only');
+      }
+    }
+
+    try {
+      const raw = await this._post(payload);
+      return truncate(raw, config.llm.maxOutputChars);
+    } catch (err) {
+      logger.error({ err: err.message, model }, 'LLM generate() failed');
+      if (err.code === 'ECONNREFUSED') {
+        throw new Error('LLM backend unreachable. Is `ollama serve` running?');
+      }
+      if (err.response && err.response.status === 404) {
+        throw new Error(`Model "${model}" not found in Ollama. Pull it first: ollama pull ${model}`);
+      }
+      throw new Error(`LLM error: ${err.message}`);
+    }
+  }
+
+  async summarize({ previousSummary, transcript, maxChars }) {
+    const prompt = [
+      'Condense the following into an updated running summary of this conversation.',
+      'Keep names, decisions, tasks, and preferences. Drop small talk. Be terse.',
+      `Target length: under ${maxChars} characters.`,
+      '',
+      previousSummary ? `Existing summary:\n${previousSummary}\n` : '',
+      `New messages to fold in:\n${transcript}`,
+    ].filter(Boolean).join('\n');
+
+    const raw = await this._post({
+      model: this.textModel,
+      system: 'You are a precise summarization engine. Output only the summary text, no preamble.',
+      prompt,
+    });
+    return truncate(raw, maxChars);
+  }
+}
+
+let singleton = null;
+function createLlmClient() {
+  if (singleton) return singleton;
+  if (config.llm.provider !== 'ollama') {
+    logger.warn({ provider: config.llm.provider }, 'Unknown LLM_PROVIDER, defaulting to ollama implementation');
+  }
+  singleton = new OllamaClient();
+  return singleton;
+}
+
+module.exports = { createLlmClient };

@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: for f in $(find src -name '*.js'); do node --check "$f"; done
+      - run: cp .env.example .env && node src/store/migrate.js
+
+  # Placeholder for future Claude-assisted PR review.
+  # Add an ANTHROPIC_API_KEY repo secret and a claude-code-action step here
+  # once you want automated review/maintenance on PRs.

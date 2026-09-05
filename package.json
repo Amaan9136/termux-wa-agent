@@ -1,0 +1,23 @@
+{
+  "name": "termux-wa-agent",
+  "version": "1.0.0",
+  "description": "Personal WhatsApp AI assistant/manager for Termux - Node.js only, Baileys + SQLite + Ollama",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node --no-warnings src/index.js",
+    "migrate": "node --no-warnings src/store/migrate.js",
+    "dev": "node --trace-warnings src/index.js"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "pino": "^9.4.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

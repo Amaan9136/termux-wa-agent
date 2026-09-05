@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# env
+.env
+
+# auth/session (contains WhatsApp login keys - NEVER commit)
+data/auth_info/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# logs
+logs/*.log
+
+# media (downloaded images etc.)
+media/incoming/*
+media/tmp/*
+!media/incoming/.gitkeep
+!media/tmp/.gitkeep
+
+# misc
+.DS_Store
+*.swp
+npm-debug.log*
