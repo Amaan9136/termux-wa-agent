@@ -10,8 +10,6 @@ function match(ctx) {
   return URL_RE.test(t) || LIST_RE.test((ctx.text || '').trim());
 }
 
-/** Called from the router for every incoming message, regardless of whether
- *  a skill was explicitly invoked, so links get captured passively. */
 function autoCapture(ctx) {
   const t = (ctx.text || '') + ' ' + (ctx.caption || '');
   const m = t.match(URL_RE);

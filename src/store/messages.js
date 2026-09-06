@@ -40,7 +40,6 @@ function addMessage({
   });
 }
 
-/** Most recent N messages, chronological order (oldest first) for prompt building. */
 function getRecentWindow(chatJid, limit) {
   const rows = recentStmt.all(chatJid, limit);
   return rows.reverse();
@@ -50,7 +49,6 @@ function countTotal(chatJid) {
   return countSinceStmt.get(chatJid, 0).n;
 }
 
-/** Oldest `n` messages, used when rolling a batch into the summary. */
 function getOldestBatch(chatJid, n) {
   return oldestUnsummarizedStmt.all(chatJid, n);
 }

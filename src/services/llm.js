@@ -1,20 +1,5 @@
 'use strict';
 
-/**
- * LLM abstraction layer.
- *
- * Design goal: nothing else in the codebase should know it's talking to
- * Ollama specifically. Every caller uses generate({...}) / summarize({...}).
- * To add a new provider (OpenAI-compatible endpoint, llama.cpp server, etc.)
- * implement the same two methods and swap it in `createLlmClient()`.
- *
- * Vision support: if OLLAMA_VISION_MODEL is set and an image is attached,
- * generate() automatically routes to the vision model with the image
- * base64-encoded per Ollama's /api/generate `images` field. If no vision
- * model is configured, images are gracefully degraded to "image + caption
- * text" so the bot still responds sensibly instead of failing.
- */
-
 const fs = require('fs');
 const axios = require('axios');
 const config = require('../config');
@@ -42,12 +27,6 @@ class OllamaClient {
     return (res.data && res.data.response ? res.data.response : '').trim();
   }
 
-  /**
-   * @param {object} opts
-   * @param {string} opts.systemPrompt
-   * @param {string} opts.prompt - fully assembled user-facing prompt (context + question)
-   * @param {string} [opts.imagePath] - local filesystem path to an image, if any
-   */
   async generate({ systemPrompt, prompt, imagePath }) {
     const useVision = Boolean(imagePath) && Boolean(this.visionModel);
     const model = useVision ? this.visionModel : this.textModel;

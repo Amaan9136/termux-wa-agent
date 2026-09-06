@@ -1,7 +1,6 @@
 'use strict';
 
 const skills = require('../skills');
-const linkSaveSkill = require('../skills/linkSaveSkill');
 const memoryService = require('../services/memoryService');
 const botState = require('../store/botState');
 const logger = require('../utils/logger');
@@ -21,18 +20,12 @@ function formatContextPrompt({ rollingSummary, recentMessages, currentStatus, in
   return lines.join('\n');
 }
 
-/**
- * ctx: { text, caption, chatJid, senderJid, isOwner, isGroup, mentioned, llm }
- * Returns a string reply, or null if the router decides not to respond.
- */
 async function route(ctx) {
-  // BRB overrides everything except owner-only control commands.
   const state = botState.getState();
   if (state.brb_enabled && !ctx.isOwner) {
     return state.brb_message;
   }
 
-  // Explicit skill match wins over generic chat.
   for (const skill of skills) {
     try {
       if (skill.match(ctx)) {
@@ -45,7 +38,6 @@ async function route(ctx) {
     }
   }
 
-  // Fall back to direct LLM reply using rolling summary + recent window.
   const { rollingSummary, recentMessages } = memoryService.buildContext(ctx.chatJid);
   const prompt = formatContextPrompt({
     rollingSummary,

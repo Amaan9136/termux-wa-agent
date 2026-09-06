@@ -7,6 +7,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,
+  Browsers,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -16,6 +17,30 @@ const logger = require('../utils/logger');
 let sockRef = null;
 let reconnectAttempts = 0;
 const MAX_RAPID_RECONNECTS = 5;
+
+// Baileys needs to be able to look up previously-sent messages (by id) when
+// it has to re-encrypt/retry delivery to a participant whose session needs
+// a resend (very common in groups, and for any recipient other than
+// yourself). Without a getMessage store, sends to OTHER participants can
+// silently fail/never arrive even though sock.sendMessage() resolves fine -
+// this is one of the most common causes of "self-chat works, group/other
+// contacts don't" reports with Baileys.
+const outgoingMessageCache = new Map();
+const MSG_CACHE_MAX = 500;
+
+function cacheOutgoing(jid, id, message) {
+  const key = `${jid}:${id}`;
+  outgoingMessageCache.set(key, message);
+  if (outgoingMessageCache.size > MSG_CACHE_MAX) {
+    const firstKey = outgoingMessageCache.keys().next().value;
+    outgoingMessageCache.delete(firstKey);
+  }
+}
+
+async function getMessage(key) {
+  const cached = outgoingMessageCache.get(`${key.remoteJid}:${key.id}`);
+  return cached || undefined;
+}
 
 function getSock() {
   return sockRef;
@@ -58,6 +83,15 @@ async function start(onMessage, onFatalDisconnect) {
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
+    // A stable, "real" browser identity greatly improves reliability of
+    // delivery to other participants (not just your own self-chat). Some
+    // recipient clients/relays are stricter about messages coming from an
+    // unidentified/anonymous multi-device session.
+    browser: Browsers.ubuntu('Chrome'),
+    getMessage,
+    // Helps Baileys retry/resend when a participant's session needs a
+    // fresh prekey exchange, instead of silently dropping the message.
+    syncFullHistory: false,
   });
 
   sockRef = sock;
@@ -127,4 +161,17 @@ async function start(onMessage, onFatalDisconnect) {
   return sock;
 }
 
-module.exports = { start, getSock };
+/**
+ * Wraps sock.sendMessage so every outgoing message is cached for getMessage()
+ * lookups. Call this instead of sock.sendMessage directly wherever possible
+ * (sendQueue already does, see core/sendQueue.js).
+ */
+async function sendMessageTracked(sock, jid, content) {
+  const sent = await sock.sendMessage(jid, content);
+  if (sent && sent.key && sent.message) {
+    cacheOutgoing(jid, sent.key.id, sent.message);
+  }
+  return sent;
+}
+
+module.exports = { start, getSock, sendMessageTracked };

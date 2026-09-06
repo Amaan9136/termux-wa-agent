@@ -13,6 +13,7 @@ function int(val, def) {
   return Number.isFinite(n) ? n : def;
 }
 
+// Strip everything but digits (handles "+91 886...", "0091886...", spaces, dashes).
 const OWNER_NUMBER = (process.env.OWNER_NUMBER || '').replace(/[^\d]/g, '');
 const OWNER_JID = process.env.OWNER_JID && process.env.OWNER_JID.trim()
   ? process.env.OWNER_JID.trim()
@@ -30,7 +31,7 @@ const config = {
   },
 
   auth: {
-    method: (process.env.AUTH_METHOD || 'pairing').toLowerCase(), // qr | pairing
+    method: (process.env.AUTH_METHOD || 'pairing').toLowerCase(),
     dir: path.resolve(root, process.env.AUTH_DIR || './data/auth_info'),
   },
 
@@ -55,7 +56,7 @@ const config = {
   },
 
   groups: {
-    defaultMode: (process.env.DEFAULT_GROUP_MODE || 'off').toLowerCase(), // off | on | mention
+    defaultMode: (process.env.DEFAULT_GROUP_MODE || 'off').toLowerCase(),
   },
 
   logging: {

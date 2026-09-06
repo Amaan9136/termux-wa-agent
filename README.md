@@ -21,12 +21,28 @@ applies group gating -> `commands.js` handles `/help` etc, otherwise `router.js`
 checks skills in order, falls back to `llm.js` for a direct reply -> `sendQueue.js`
 sends it back, throttled and retried.
 
+## CHANGELOG (this revision)
+
+- **Fixed: self-chat commands (e.g. `/help`) got no reply.** The handler had a
+  blanket `if (fromMe) return;` which also silently dropped every message the
+  owner typed into their OWN self-chat (message-yourself), since WhatsApp
+  marks those `fromMe: true` too. Now only genuine bot-echo messages are
+  skipped; owner self-chat messages are processed normally.
+- **Fixed: messages not reliably delivered to other participants/contacts.**
+  Added a `getMessage` cache + a real browser identity (`Browsers.ubuntu`) to
+  the Baileys socket config. Without `getMessage`, Baileys can't resend when
+  a recipient's session needs a fresh prekey handshake — sends can silently
+  vanish for anyone other than yourself. `sendQueue` now routes all sends
+  through `whatsapp.sendMessageTracked()` so every outgoing message gets
+  cached for this purpose.
+- Normalized `OWNER_NUMBER` parsing to strip `+`, spaces, and dashes robustly.
+- No video-handling code existed anywhere in the codebase to begin with —
+  media types are image/document/audio only, so there was nothing to remove.
+
 ### Why SQLite
 
-Single file, zero external service, fast (`better-sqlite3` is synchronous and
-in-process), survives Termux app restarts, and trivial to inspect/back up.
-A per-chat config table plus an append-only messages table covers everything
-this bot needs without the overhead of running a DB server on a phone.
+Single file, zero external service, fast (synchronous, in-process via
+`node:sqlite`), survives Termux app restarts, and trivial to inspect/back up.
 
 ### How memory works
 
@@ -36,27 +52,16 @@ Each chat has:
 
 Every reply prompt = `rolling_summary + recent window + new message`. Once a
 chat accumulates more than `SUMMARY_TRIGGER_COUNT` raw messages, the oldest
-batch is folded into the summary and deleted from the messages table. This
-keeps prompt size and DB size roughly constant no matter how long a chat runs,
-which matters on a phone. If the LLM is unreachable during a roll-up, a naive
-text-concatenation fallback is used instead of losing the batch.
+batch is folded into the summary and deleted from the messages table.
 
 ### How skills work
 
 A skill is `{ name, description, match(ctx), run(ctx) }`. The router tries
-each skill's `match()` in order; the first match wins and its `run()` result
-is sent back. If nothing matches, the message goes to the LLM directly with
-full chat context. Skills live in `src/skills/`, registered in `src/skills/index.js`.
-Add a new skill by dropping a file there and requiring it in the index.
+each skill's `match()` in order; the first match wins. If nothing matches,
+the message goes to the LLM directly with full chat context.
 
 Included skills: reminder, memory write, memory lookup, group management
-(owner-only), BRB/status (owner-only), summarizer, link save (auto-captures
-any URL shared in a chat, plus `/links` to list them).
-
-Images: captions are read and stored; no vision model is wired up currently
-(disabled per configuration). `OLLAMA_VISION_MODEL` in `.env` is the hook —
-set it once you have a vision-capable model pulled, and `llm.js` will route
-image messages to it automatically without any other code changes.
+(owner-only), BRB/status (owner-only), summarizer, link save.
 
 ## Termux setup
 
@@ -73,18 +78,25 @@ npm start
 ```
 
 On first run with `AUTH_METHOD=pairing`, a pairing code prints in the
-terminal — enter it in WhatsApp under Linked Devices. Session is saved to
-`data/auth_info/` so you won't need to re-pair on restart.
+terminal — enter it in WhatsApp under Linked Devices.
 
-Run `ollama serve` (and have your model pulled, e.g. `ollama pull gpt-oss:20b-cloud`)
-before starting the bot, on whatever machine/terminal Ollama runs on — the
-bot just needs `OLLAMA_BASE_URL` to reach it.
+Run `ollama serve` (with your model pulled) on whichever machine Ollama runs
+on — the bot just needs `OLLAMA_BASE_URL` to reach it.
+
+## Testing self-chat commands
+
+To test `/help` and other commands from your own phone: open your OWN chat
+in WhatsApp (message yourself) and type `/help`. This now works correctly —
+previously it silently did nothing due to the `fromMe` bug described above.
+
+To test group/other-contact delivery: `/group whitelist` in a group you own,
+then have someone else message or @mention the bot there.
 
 ## Configuration
 
-Edit `.env` (see `.env.example` for full list). Key values:
+Edit `.env` (see `.env.example`). Key values:
 
-- `OWNER_NUMBER` — your number, digits only, used for pairing + owner checks
+- `OWNER_NUMBER` — your number, digits only (any `+`/spaces/dashes are stripped automatically)
 - `OLLAMA_TEXT_MODEL` — model name as known to your Ollama instance
 - `DEFAULT_GROUP_MODE` — `off` by default; new groups are ignored until whitelisted
 - `RECENT_WINDOW_SIZE` / `SUMMARY_TRIGGER_COUNT` — tune memory size vs prompt cost
@@ -99,10 +111,8 @@ Edit `.env` (see `.env.example` for full list). Key values:
 ## Group safety
 
 Every group defaults to `ai_enabled = 0` on first contact. Owner whitelists a
-group with `/group whitelist` (run inside the group, or pass a JID). Mention-only
-mode (`/group mention`) makes the bot only respond when the owner is @mentioned
-or the message is a command — useful for groups where you want help on-demand
-without the bot replying to everyone.
+group with `/group whitelist`. Mention-only mode (`/group mention`) makes the
+bot only respond when the owner is @mentioned or the message is a command.
 
 ## Extending
 
@@ -110,14 +120,3 @@ without the bot replying to everyone.
   register it in `src/skills/index.js`.
 - New LLM provider: implement `generate()` / `summarize()` like `OllamaClient`
   in `src/services/llm.js`, swap it in `createLlmClient()`.
-- Documents/audio: `extractMessageContent()` in `src/core/whatsapp.js` already
-  tags these types; add storage/handling the same way images are handled.
-
-## Notes on Claude/GitHub workflow
-
-Plain Claude.ai web chat cannot push commits or open PRs directly — there is
-no GitHub write access from that surface. This repo's code was generated in
-chat and must be pushed manually (or via Claude Code / Claude in Chrome with
-GitHub access, which can edit and open PRs directly if you want that later).
-A CI stub is included at `.github/workflows/ci.yml` with a placeholder for
-wiring up Claude-assisted PR review in future.

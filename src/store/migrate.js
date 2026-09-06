@@ -1,11 +1,5 @@
 'use strict';
 
-/**
- * Initializes/migrates the SQLite schema. Safe to run multiple times
- * (uses CREATE TABLE IF NOT EXISTS). Run manually with `npm run migrate`
- * or it is auto-invoked on startup by store/db.js.
- */
-
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
@@ -25,7 +19,6 @@ const SCHEMA = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
--- One row per chat (individual or group JID)
 CREATE TABLE IF NOT EXISTS chats (
   jid TEXT PRIMARY KEY,
   is_group INTEGER NOT NULL DEFAULT 0,
@@ -40,15 +33,14 @@ CREATE TABLE IF NOT EXISTS chats (
   updated_at INTEGER NOT NULL
 );
 
--- Raw message log (append-only). Kept lightweight - text + minimal media meta.
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   wa_message_id TEXT NOT NULL,
   chat_jid TEXT NOT NULL,
   sender_jid TEXT NOT NULL,
   from_me INTEGER NOT NULL DEFAULT 0,
-  role TEXT NOT NULL, -- 'user' | 'assistant' | 'system'
-  msg_type TEXT NOT NULL DEFAULT 'text', -- text | image | document | audio | link
+  role TEXT NOT NULL,
+  msg_type TEXT NOT NULL DEFAULT 'text',
   text TEXT,
   caption TEXT,
   media_path TEXT,
@@ -59,7 +51,6 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_chat_ts ON messages(chat_jid, ts);
 
--- Deduplication guard, independent of the messages table so it stays tiny/fast.
 CREATE TABLE IF NOT EXISTS seen_message_ids (
   wa_message_id TEXT NOT NULL,
   chat_jid TEXT NOT NULL,
@@ -67,10 +58,9 @@ CREATE TABLE IF NOT EXISTS seen_message_ids (
   PRIMARY KEY (wa_message_id, chat_jid)
 );
 
--- Freeform key/value memory notes, scoped per chat (or 'global').
 CREATE TABLE IF NOT EXISTS memory_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  scope TEXT NOT NULL, -- chat_jid or 'global'
+  scope TEXT NOT NULL,
   key TEXT,
   value TEXT NOT NULL,
   created_at INTEGER NOT NULL
@@ -78,7 +68,6 @@ CREATE TABLE IF NOT EXISTS memory_notes (
 
 CREATE INDEX IF NOT EXISTS idx_memory_scope ON memory_notes(scope);
 
--- Reminders created by the reminder skill.
 CREATE TABLE IF NOT EXISTS reminders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   chat_jid TEXT NOT NULL,
@@ -91,7 +80,6 @@ CREATE TABLE IF NOT EXISTS reminders (
 
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at, fired);
 
--- Saved links from the link-save skill.
 CREATE TABLE IF NOT EXISTS saved_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   chat_jid TEXT NOT NULL,
@@ -100,7 +88,6 @@ CREATE TABLE IF NOT EXISTS saved_links (
   created_at INTEGER NOT NULL
 );
 
--- Single-row table holding global bot state (BRB mode, current status, etc.)
 CREATE TABLE IF NOT EXISTS bot_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   brb_enabled INTEGER NOT NULL DEFAULT 0,

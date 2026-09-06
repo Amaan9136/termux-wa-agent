@@ -17,7 +17,6 @@ const fileLogger = pino(
   destination
 );
 
-// Also mirror to console for interactive Termux sessions.
 const consoleLogger = pino({
   level: config.logging.level,
   transport: undefined,
@@ -26,14 +25,10 @@ const consoleLogger = pino({
 function forward(level, args) {
   try {
     fileLogger[level](...args);
-  } catch (_) {
-    /* never let logging crash the app */
-  }
+  } catch (_) {}
   try {
     consoleLogger[level](...args);
-  } catch (_) {
-    /* ignore */
-  }
+  } catch (_) {}
 }
 
 const logger = {
