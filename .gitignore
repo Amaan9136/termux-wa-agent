@@ -24,3 +24,6 @@ media/tmp/*
 .DS_Store
 *.swp
 npm-debug.log*
+
+# repomix 
+repomix-output.*
