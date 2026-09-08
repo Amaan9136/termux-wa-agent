@@ -7,26 +7,13 @@ class SendQueue {
   constructor() {
     this.queue = [];
     this.running = false;
-    this._sendMessageTracked = null; // lazily bound to avoid a require cycle
+    this._sendMessageTracked = null;
   }
 
-  /**
-   * whatsapp.js calls this once at startup so the queue can cache outgoing
-   * messages (needed for Baileys' getMessage retry/resend path when
-   * delivering to participants other than yourself).
-   */
   setTransport(sendMessageTracked) {
     this._sendMessageTracked = sendMessageTracked;
   }
 
-  /**
-   * @param {Function} sockGetter
-   * @param {string} jid
-   * @param {object} content
-   * @param {(sentMsg: object|null) => void} [onSent] - called after a successful
-   *   send with whatever the send resolved to (so callers can capture the
-   *   outgoing wa_message_id, e.g. for echo-detection).
-   */
   push(sockGetter, jid, content, onSent) {
     this.queue.push({ sockGetter, jid, content, attempt: 0, onSent });
     this._run();

@@ -4,7 +4,7 @@ const axios = require('axios');
 const config = require('../config');
 const logger = require('../utils/logger');
 
-const SYSTEM_PROMPT_DEFAULT = require('../prompts/systemPrompt');
+const buildSystemPrompt = require('../prompts/systemPrompt');
 
 function truncate(text, maxChars) {
   if (!text) return text;
@@ -29,7 +29,7 @@ class OllamaClient {
     const model = this.textModel;
     const payload = {
       model,
-      system: systemPrompt || SYSTEM_PROMPT_DEFAULT,
+      system: systemPrompt || buildSystemPrompt(false),
       prompt,
     };
 

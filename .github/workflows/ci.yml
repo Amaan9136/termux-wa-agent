@@ -15,7 +15,3 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: for f in $(find src -name '*.js'); do node --check "$f"; done
       - run: cp .env.example .env && node src/store/migrate.js
-
-  # Placeholder for future Claude-assisted PR review.
-  # Add an ANTHROPIC_API_KEY repo secret and a claude-code-action step here
-  # once you want automated review/maintenance on PRs.

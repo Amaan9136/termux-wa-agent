@@ -5,6 +5,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   Browsers,
+  fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -15,14 +16,6 @@ let sockRef = null;
 let reconnectAttempts = 0;
 const MAX_RAPID_RECONNECTS = 5;
 
-// Right after a fresh pairing/login (or any reconnect), Baileys/WhatsApp go
-// through a burst of Signal session renegotiation ("Closing session: ..."
-// lines from libsignal-node - normal, not an error). Messages sent to ANY
-// jid, including your own self-chat, during this churn window can be
-// silently dropped by WhatsApp's servers even though sock.sendMessage()
-// resolves without throwing. This is why a reply sent immediately after
-// connecting (e.g. testing "/help" right after pairing) can vanish.
-// We track connection stability and make outgoing sends wait it out.
 const CONNECTION_SETTLE_MS = 4000;
 let connectionStableSince = 0;
 
@@ -40,13 +33,6 @@ function waitForStableConnection(maxWaitMs = 15000) {
   });
 }
 
-// Baileys needs to be able to look up previously-sent messages (by id) when
-// it has to re-encrypt/retry delivery to a participant whose session needs
-// a resend (very common in groups, and for any recipient other than
-// yourself). Without a getMessage store, sends to OTHER participants can
-// silently fail/never arrive even though sock.sendMessage() resolves fine -
-// this is one of the most common causes of "self-chat works, group/other
-// contacts don't" reports with Baileys.
 const outgoingMessageCache = new Map();
 const MSG_CACHE_MAX = 500;
 
@@ -80,25 +66,25 @@ function extractMessageContent(msg) {
   return { type: 'unknown', text: '' };
 }
 
-/**
- * @param {(msg: object, extracted: object) => Promise<void>} onMessage
- * @param {(reason: string) => void} onFatalDisconnect
- */
 async function start(onMessage, onFatalDisconnect) {
   const { state, saveCreds } = await useMultiFileAuthState(config.auth.dir);
 
+  let version;
+  try {
+    const fetched = await fetchLatestBaileysVersion();
+    version = fetched.version;
+    logger.info({ version, isLatest: fetched.isLatest }, 'Using WA Web version');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Could not fetch latest WA version, using bundled default');
+  }
+
   const sock = makeWASocket({
+    version,
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
-    // A stable, "real" browser identity greatly improves reliability of
-    // delivery to other participants (not just your own self-chat). Some
-    // recipient clients/relays are stricter about messages coming from an
-    // unidentified/anonymous multi-device session.
     browser: Browsers.ubuntu('Chrome'),
     getMessage,
-    // Helps Baileys retry/resend when a participant's session needs a
-    // fresh prekey exchange, instead of silently dropping the message.
     syncFullHistory: false,
   });
 
@@ -169,11 +155,6 @@ async function start(onMessage, onFatalDisconnect) {
   return sock;
 }
 
-/**
- * Wraps sock.sendMessage so every outgoing message is cached for getMessage()
- * lookups. Call this instead of sock.sendMessage directly wherever possible
- * (sendQueue already does, see core/sendQueue.js).
- */
 async function sendMessageTracked(sock, jid, content) {
   await waitForStableConnection();
   const sent = await sock.sendMessage(jid, content);

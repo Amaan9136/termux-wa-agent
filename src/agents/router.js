@@ -4,6 +4,7 @@ const skills = require('../skills');
 const memoryService = require('../services/memoryService');
 const botState = require('../store/botState');
 const logger = require('../utils/logger');
+const buildSystemPrompt = require('../prompts/systemPrompt');
 
 function formatContextPrompt({ rollingSummary, recentMessages, currentStatus, incomingText }) {
   const lines = [];
@@ -38,6 +39,12 @@ async function route(ctx) {
     }
   }
 
+  const trimmed = (ctx.text || '').trim();
+  if (trimmed.startsWith('/')) {
+    const attempted = trimmed.split(/\s+/)[0];
+    return `Unknown command "${attempted}". Type /help to see what I can do.`;
+  }
+
   const { rollingSummary, recentMessages } = memoryService.buildContext(ctx.chatJid);
   const prompt = formatContextPrompt({
     rollingSummary,
@@ -46,7 +53,7 @@ async function route(ctx) {
     incomingText: ctx.text,
   });
 
-  return ctx.llm.generate({ prompt });
+  return ctx.llm.generate({ prompt, systemPrompt: buildSystemPrompt(ctx.isOwner) });
 }
 
 module.exports = { route };

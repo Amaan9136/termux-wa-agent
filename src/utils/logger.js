@@ -22,6 +22,9 @@ const consoleLogger = pino({
   transport: undefined,
 });
 
+const alwaysFile = pino({ level: 'info', timestamp: pino.stdTimeFunctions.isoTime }, destination);
+const alwaysConsole = pino({ level: 'info' });
+
 function forward(level, args) {
   try {
     fileLogger[level](...args);
@@ -37,6 +40,14 @@ const logger = {
   error: (...args) => forward('error', args),
   debug: (...args) => forward('debug', args),
   fatal: (...args) => forward('fatal', args),
+  always: (...args) => {
+    try {
+      alwaysFile.info(...args);
+    } catch (_) {}
+    try {
+      alwaysConsole.info(...args);
+    } catch (_) {}
+  },
 };
 
 module.exports = logger;

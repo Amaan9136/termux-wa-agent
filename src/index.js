@@ -1,13 +1,45 @@
 'use strict';
 
+function tryExec(cmd) {
+  try {
+    require('child_process').execSync(cmd, { stdio: 'ignore' });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+if (process.platform === 'win32') {
+  tryExec('chcp 65001');
+} else {
+  let isWsl = false;
+  try {
+    isWsl = /microsoft/i.test(require('fs').readFileSync('/proc/version', 'utf8'));
+  } catch (_) {}
+  if (isWsl) {
+    tryExec('chcp.com 65001') || tryExec('/mnt/c/Windows/System32/chcp.com 65001');
+  }
+}
+process.stdout.setDefaultEncoding('utf8');
+process.stderr.setDefaultEncoding('utf8');
+
+const NOISY_LIBSIGNAL_PATTERNS = [
+  'Failed to decrypt message with any known session',
+  'Session error:',
+];
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+  const first = args[0];
+  if (typeof first === 'string' && NOISY_LIBSIGNAL_PATTERNS.some((p) => first.startsWith(p))) {
+    return;
+  }
+  originalConsoleError(...args);
+};
+
 const config = require('./config');
 const logger = require('./utils/logger');
 const singleton = require('./core/singleton');
 
-// Must run before anything else touches data/auth_info or opens a socket.
-// Prevents the exact failure mode that caused the SessionCipher decrypt
-// errors and reconnect storms: two node processes racing on the same
-// WhatsApp multi-device session.
 singleton.acquireLock();
 singleton.installShutdownHooks();
 
