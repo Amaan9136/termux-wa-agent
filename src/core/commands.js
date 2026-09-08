@@ -37,7 +37,7 @@ async function handle(ctx) {
   const helpMatch = t.match(/^\/help(?:\s+(\S+))?$/i);
   if (helpMatch) {
     const target = helpMatch[1];
-    if (!target) return registry.formatAllCommandsHelp();
+    if (!target) return registry.formatAllCommandsHelp(ctx.isOwner);
     const detail = registry.formatCommandHelp(target);
     return detail || `Unknown command "${target}". Type /help to see everything I can do.`;
   }
@@ -61,9 +61,20 @@ async function handle(ctx) {
   if (/^\/memory$/i.test(t)) return registry.formatCommandHelp('memory');
 
   if (/^\/memory show$/i.test(t)) {
+    const chat = chatsStore.getOrCreateChat(ctx.chatJid, { isGroup: ctx.isGroup });
     const notes = memoryNotes.listNotes(ctx.chatJid, 20);
-    if (!notes.length) return 'No memory notes for this chat.';
-    return notes.map((n) => `- ${n.value}`).join('\n');
+    const lines = [];
+    if (chat.rolling_summary) {
+      lines.push('*What I remember about this chat*');
+      lines.push(chat.rolling_summary);
+    }
+    if (notes.length) {
+      if (lines.length) lines.push('');
+      lines.push('*Saved notes*');
+      lines.push(...notes.map((n) => `- ${n.value}`));
+    }
+    if (!lines.length) return 'No memory notes or summary for this chat yet.';
+    return lines.join('\n');
   }
 
   if (/^\/memory clear$/i.test(t)) {

@@ -75,6 +75,10 @@ const config = {
     minIntervalMs: int(process.env.ALERT_MIN_INTERVAL_MS, 60000),
     dedupWindowMs: int(process.env.ALERT_DEDUP_WINDOW_MS, 600000),
   },
+
+  runtime: {
+    backlogGraceMs: int(process.env.BACKLOG_GRACE_MS, 10000),
+  },
 };
 
 module.exports = config;

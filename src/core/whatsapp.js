@@ -18,9 +18,14 @@ const MAX_RAPID_RECONNECTS = 5;
 
 const CONNECTION_SETTLE_MS = 4000;
 let connectionStableSince = 0;
+let sessionReadyAt = 0;
 
 function isConnectionStable() {
   return connectionStableSince > 0 && (Date.now() - connectionStableSince) >= CONNECTION_SETTLE_MS;
+}
+
+function getSessionReadyAt() {
+  return sessionReadyAt;
 }
 
 function waitForStableConnection(maxWaitMs = 15000) {
@@ -164,6 +169,7 @@ async function start(onMessage, onFatalDisconnect) {
       reconnectAttempts = 0;
       logger.info('WhatsApp connected');
       connectionStableSince = Date.now();
+      sessionReadyAt = Date.now();
       logger.info({ settleMs: CONNECTION_SETTLE_MS }, 'Waiting briefly for session to stabilize before sends');
     }
   });
@@ -201,4 +207,5 @@ module.exports = {
   waitForStableConnection,
   getGroupMetadata,
   getCachedGroupMetadata,
+  getSessionReadyAt,
 };

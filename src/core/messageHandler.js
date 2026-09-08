@@ -104,6 +104,9 @@ function buildHandler({ llm, getSock }) {
 
     const isOwnEcho = fromMe && recentlySentIds.has(waMessageId);
 
+    const text = extracted.text || '';
+    const isOwnerCommandHere = isOwner && commands.isCommand(text);
+
     messagesStore.addMessage({
       waMessageId,
       chatJid,
@@ -117,15 +120,30 @@ function buildHandler({ llm, getSock }) {
 
     if (isOwnEcho) return;
 
-    if (fromMe && !isSelfChat(chatJid, getSock(), config.owner.number)) return;
+    // Owner's own plain chat messages sent to a contact (not a /command,
+    // not the self-chat) are just the owner talking - don't auto-reply to
+    // them. Owner's own /commands are allowed through from any chat window
+    // so admin-to-user commands (e.g. /memory show) work without switching
+    // to the self-chat first.
+    if (fromMe && !isSelfChat(chatJid, getSock(), config.owner.number) && !isOwnerCommandHere) return;
 
-    const text = extracted.text || '';
+    // Messages delivered late after a reconnect (the bot was paused/down and
+    // WhatsApp queued them) are stored above for history/continuity, but we
+    // never generate a reply for them - only live messages received while
+    // the connection is actually up get answered.
+    const sessionReadyAt = whatsapp.getSessionReadyAt();
+    const msgTs = (msg.messageTimestamp || Date.now() / 1000) * 1000;
+    if (!fromMe && sessionReadyAt && msgTs < sessionReadyAt - config.runtime.backlogGraceMs) {
+      logger.info({ chatJid, msgTs, sessionReadyAt }, 'Skipping reply for backlog message delivered after reconnect');
+      return;
+    }
+
     const mentioned = isGroup
       ? isMentioned(msg, config.owner.number, groupMeta && groupMeta.participantCount)
       : true;
 
     if (isGroup) {
-      if (!chatsStore.isChatAllowed(chat)) return;
+      if (!isOwnerCommandHere && !chatsStore.isChatAllowed(chat)) return;
       if (chat.mention_only && !mentioned && !commands.isCommand(text)) return;
     }
 
