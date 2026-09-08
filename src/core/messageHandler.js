@@ -38,9 +38,25 @@ function markSentByBot(waMessageId) {
   setTimeout(() => recentlySentIds.delete(waMessageId), RECENTLY_SENT_TTL_MS);
 }
 
-function isSelfChat(chatJid, ownerNumber) {
-  if (!ownerNumber) return false;
-  return normalizeJidNumber(chatJid) === ownerNumber;
+function isSelfChat(chatJid, sock, ownerNumber) {
+  const chatNum = normalizeJidNumber(chatJid);
+  if (!chatNum) return false;
+  if (chatNum === ownerNumber) return true;
+  const user = sock && sock.user;
+  if (!user) return false;
+  const ownIds = [user.id, user.lid].filter(Boolean).map(normalizeJidNumber);
+  return ownIds.includes(chatNum);
+}
+
+async function resolveReply(ctx, extracted) {
+  if (extracted.type === 'unsupported') {
+    return "I'm a text-only assistant right now - I can't read images, documents, or audio. Just send text!";
+  }
+  if (commands.isCommand(ctx.text)) {
+    const r = await withTimeout(commands.handle(ctx), config.llm.timeoutMs, 'command');
+    if (r !== null) return r;
+  }
+  return withTimeout(router.route(ctx), config.llm.timeoutMs, 'router');
 }
 
 function buildHandler({ llm, getSock }) {
@@ -81,7 +97,7 @@ function buildHandler({ llm, getSock }) {
 
     if (isOwnEcho) return;
 
-    if (fromMe && !isSelfChat(chatJid, config.owner.number)) return;
+    if (fromMe && !isSelfChat(chatJid, getSock(), config.owner.number)) return;
 
     const text = extracted.text || '';
     const mentioned = isGroup ? isMentioned(msg, config.owner.number) : true;
@@ -103,14 +119,7 @@ function buildHandler({ llm, getSock }) {
 
     let reply = null;
     try {
-      if (extracted.type === 'unsupported') {
-        reply = "I'm a text-only assistant right now - I can't read images, documents, or audio. Just send text!";
-      } else if (commands.isCommand(text)) {
-        reply = await withTimeout(commands.handle(ctx), config.llm.timeoutMs, 'command');
-      }
-      if (reply === null) {
-        reply = await withTimeout(router.route(ctx), config.llm.timeoutMs, 'router');
-      }
+      reply = await resolveReply(ctx, extracted);
     } catch (err) {
       logger.error({ err: err.message, chatJid }, 'Handling failed');
       reply = `Sorry, something went wrong: ${err.message}`;
@@ -141,4 +150,4 @@ function buildHandler({ llm, getSock }) {
   };
 }
 
-module.exports = { buildHandler };
+module.exports = { buildHandler, resolveReply, normalizeJidNumber, isSelfChat };

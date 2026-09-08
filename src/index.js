@@ -46,6 +46,7 @@ singleton.installShutdownHooks();
 const whatsapp = require('./core/whatsapp');
 const sendQueue = require('./core/sendQueue');
 const { buildHandler } = require('./core/messageHandler');
+const { startAdminCli } = require('./core/adminCli');
 const { createLlmClient } = require('./services/llm');
 const { alertOwner } = require('./services/alerts');
 const { startReminderPoller } = require('./services/reminderPoller');
@@ -65,6 +66,7 @@ function onFatalDisconnect(reason) {
 
 async function main() {
   logger.info({ bot: config.botName, pid: process.pid }, 'Starting agent');
+  startAdminCli({ llm });
   const handleMessage = buildHandler({ llm, getSock: whatsapp.getSock });
   await whatsapp.start(handleMessage, onFatalDisconnect);
   startReminderPoller(whatsapp.getSock);

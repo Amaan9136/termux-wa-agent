@@ -144,6 +144,19 @@ getting silently dropped during that window.
 To test group/other-contact delivery: `/group whitelist` in a group you own,
 then have someone else message or @mention the bot there.
 
+## Admin CLI
+
+When you run `npm start` in an interactive terminal, an `admin> ` prompt
+starts alongside the WhatsApp connection (no need to wait for pairing).
+Type anything there - `/help`, `/status`, `/group whitelist <jid>`, plain
+chat, anything the owner could send over WhatsApp - and it's handled by the
+exact same command/skill/router logic, then printed straight to the
+terminal. It shares state (chat history, memory notes, BRB/status) with
+your own WhatsApp self-chat, so `/reset` or `/memory clear` from the CLI
+also clears that self-chat's history, and vice versa. It only starts when
+stdin is a real TTY, so it's skipped automatically under a background
+service/non-interactive process.
+
 ## Configuration
 
 Edit `.env` (see `.env.example`). Key values:
