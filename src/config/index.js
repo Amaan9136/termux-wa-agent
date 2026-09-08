@@ -28,6 +28,8 @@ const config = {
   owner: {
     number: OWNER_NUMBER,
     jid: OWNER_JID,
+    name: (process.env.OWNER_NAME || '').trim() || 'Owner',
+    bio: (process.env.OWNER_BIO || '').trim(),
   },
 
   auth: {
@@ -39,7 +41,6 @@ const config = {
     provider: process.env.LLM_PROVIDER || 'ollama',
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
     textModel: process.env.OLLAMA_TEXT_MODEL || 'gpt-oss:20b-cloud',
-    visionModel: process.env.OLLAMA_VISION_MODEL || '',
     timeoutMs: int(process.env.LLM_TIMEOUT_MS, 120000),
     maxOutputChars: int(process.env.LLM_MAX_OUTPUT_CHARS, 1500),
   },
@@ -71,6 +72,8 @@ const config = {
 
   alerts: {
     onCrash: bool(process.env.ALERT_OWNER_ON_CRASH, true),
+    minIntervalMs: int(process.env.ALERT_MIN_INTERVAL_MS, 60000),
+    dedupWindowMs: int(process.env.ALERT_DEDUP_WINDOW_MS, 600000),
   },
 };
 

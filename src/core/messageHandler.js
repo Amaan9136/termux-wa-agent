@@ -67,7 +67,7 @@ function isSelfChat(chatJid, ownerNumber) {
 }
 
 function buildHandler({ llm, getSock }) {
-  return async function handleMessage(msg, extracted, imagePath) {
+  return async function handleMessage(msg, extracted) {
     const waMessageId = msg.key.id;
     const chatJid = msg.key.remoteJid;
     const senderJid = msg.key.participant || msg.key.remoteJid;
@@ -99,8 +99,6 @@ function buildHandler({ llm, getSock }) {
       role: fromMe ? 'assistant' : 'user',
       msgType: extracted.type,
       text: extracted.text || null,
-      caption: extracted.caption || null,
-      mediaPath: imagePath,
       ts: (msg.messageTimestamp || Date.now() / 1000) * 1000,
     });
 
@@ -122,19 +120,19 @@ function buildHandler({ llm, getSock }) {
 
     const ctx = {
       text,
-      caption: extracted.caption || '',
       chatJid,
       senderJid,
       isOwner,
       isGroup,
       mentioned,
-      imagePath,
       llm,
     };
 
     let reply = null;
     try {
-      if (commands.isCommand(text)) {
+      if (extracted.type === 'unsupported') {
+        reply = "I'm a text-only assistant right now - I can't read images, documents, or audio. Just send text!";
+      } else if (commands.isCommand(text)) {
         reply = await withTimeout(commands.handle(ctx), config.llm.timeoutMs, 'command');
       }
       if (reply === null) {

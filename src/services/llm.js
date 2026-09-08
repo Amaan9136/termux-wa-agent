@@ -1,6 +1,5 @@
 'use strict';
 
-const fs = require('fs');
 const axios = require('axios');
 const config = require('../config');
 const logger = require('../utils/logger');
@@ -17,7 +16,6 @@ class OllamaClient {
   constructor() {
     this.baseUrl = config.llm.ollamaBaseUrl.replace(/\/+$/, '');
     this.textModel = config.llm.textModel;
-    this.visionModel = config.llm.visionModel;
     this.timeoutMs = config.llm.timeoutMs;
   }
 
@@ -27,24 +25,13 @@ class OllamaClient {
     return (res.data && res.data.response ? res.data.response : '').trim();
   }
 
-  async generate({ systemPrompt, prompt, imagePath }) {
-    const useVision = Boolean(imagePath) && Boolean(this.visionModel);
-    const model = useVision ? this.visionModel : this.textModel;
-
+  async generate({ systemPrompt, prompt }) {
+    const model = this.textModel;
     const payload = {
       model,
       system: systemPrompt || SYSTEM_PROMPT_DEFAULT,
       prompt,
     };
-
-    if (useVision) {
-      try {
-        const b64 = fs.readFileSync(imagePath).toString('base64');
-        payload.images = [b64];
-      } catch (err) {
-        logger.warn({ err: err.message, imagePath }, 'Failed to read image for vision model, falling back to text-only');
-      }
-    }
 
     try {
       const raw = await this._post(payload);

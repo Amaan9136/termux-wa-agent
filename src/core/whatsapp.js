@@ -1,12 +1,9 @@
 'use strict';
 
-const path = require('path');
-const fs = require('fs');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  downloadMediaMessage,
   Browsers,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
@@ -17,6 +14,31 @@ const logger = require('../utils/logger');
 let sockRef = null;
 let reconnectAttempts = 0;
 const MAX_RAPID_RECONNECTS = 5;
+
+// Right after a fresh pairing/login (or any reconnect), Baileys/WhatsApp go
+// through a burst of Signal session renegotiation ("Closing session: ..."
+// lines from libsignal-node - normal, not an error). Messages sent to ANY
+// jid, including your own self-chat, during this churn window can be
+// silently dropped by WhatsApp's servers even though sock.sendMessage()
+// resolves without throwing. This is why a reply sent immediately after
+// connecting (e.g. testing "/help" right after pairing) can vanish.
+// We track connection stability and make outgoing sends wait it out.
+const CONNECTION_SETTLE_MS = 4000;
+let connectionStableSince = 0;
+
+function isConnectionStable() {
+  return connectionStableSince > 0 && (Date.now() - connectionStableSince) >= CONNECTION_SETTLE_MS;
+}
+
+function waitForStableConnection(maxWaitMs = 15000) {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    (function check() {
+      if (isConnectionStable() || Date.now() - start > maxWaitMs) return resolve();
+      setTimeout(check, 250);
+    })();
+  });
+}
 
 // Baileys needs to be able to look up previously-sent messages (by id) when
 // it has to re-encrypt/retry delivery to a participant whose session needs
@@ -52,28 +74,14 @@ function extractMessageContent(msg) {
 
   if (m.conversation) return { type: 'text', text: m.conversation };
   if (m.extendedTextMessage) return { type: 'text', text: m.extendedTextMessage.text || '' };
-  if (m.imageMessage) return { type: 'image', text: '', caption: m.imageMessage.caption || '' };
-  if (m.documentMessage) return { type: 'document', text: '', caption: m.documentMessage.caption || m.documentMessage.fileName || '' };
-  if (m.audioMessage) return { type: 'audio', text: '' };
+  if (m.imageMessage) return { type: 'unsupported', text: '' };
+  if (m.documentMessage) return { type: 'unsupported', text: '' };
+  if (m.audioMessage) return { type: 'unsupported', text: '' };
   return { type: 'unknown', text: '' };
 }
 
-async function saveIncomingImage(sock, msg) {
-  try {
-    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
-    const dir = path.join(config.storage.mediaDir, 'incoming');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const filePath = path.join(dir, `${msg.key.id}.jpg`);
-    fs.writeFileSync(filePath, buffer);
-    return filePath;
-  } catch (err) {
-    logger.warn({ err: err.message }, 'Failed to download image');
-    return null;
-  }
-}
-
 /**
- * @param {(msg: object, extracted: object, imagePath: string|null) => Promise<void>} onMessage
+ * @param {(msg: object, extracted: object) => Promise<void>} onMessage
  * @param {(reason: string) => void} onFatalDisconnect
  */
 async function start(onMessage, onFatalDisconnect) {
@@ -95,6 +103,7 @@ async function start(onMessage, onFatalDisconnect) {
   });
 
   sockRef = sock;
+  connectionStableSince = 0;
   sock.ev.on('creds.update', saveCreds);
 
   if (!sock.authState.creds.registered) {
@@ -119,6 +128,7 @@ async function start(onMessage, onFatalDisconnect) {
     }
 
     if (connection === 'close') {
+      connectionStableSince = 0;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       logger.warn({ statusCode, shouldReconnect }, 'Connection closed');
@@ -138,6 +148,8 @@ async function start(onMessage, onFatalDisconnect) {
     } else if (connection === 'open') {
       reconnectAttempts = 0;
       logger.info('WhatsApp connected');
+      connectionStableSince = Date.now();
+      logger.info({ settleMs: CONNECTION_SETTLE_MS }, 'Waiting briefly for session to stabilize before sends');
     }
   });
 
@@ -147,11 +159,7 @@ async function start(onMessage, onFatalDisconnect) {
       if (!msg.message) continue;
       try {
         const extracted = extractMessageContent(msg);
-        let imagePath = null;
-        if (extracted.type === 'image') {
-          imagePath = await saveIncomingImage(sock, msg);
-        }
-        await onMessage(msg, extracted, imagePath);
+        await onMessage(msg, extracted);
       } catch (err) {
         logger.error({ err: err.message }, 'Error handling incoming message');
       }
@@ -167,6 +175,7 @@ async function start(onMessage, onFatalDisconnect) {
  * (sendQueue already does, see core/sendQueue.js).
  */
 async function sendMessageTracked(sock, jid, content) {
+  await waitForStableConnection();
   const sent = await sock.sendMessage(jid, content);
   if (sent && sent.key && sent.message) {
     cacheOutgoing(jid, sent.key.id, sent.message);
@@ -174,4 +183,4 @@ async function sendMessageTracked(sock, jid, content) {
   return sent;
 }
 
-module.exports = { start, getSock, sendMessageTracked };
+module.exports = { start, getSock, sendMessageTracked, isConnectionStable, waitForStableConnection };

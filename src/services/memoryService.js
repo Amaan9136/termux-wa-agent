@@ -14,7 +14,7 @@ async function rollUpSummary(chatJid, llmClient) {
   const transcript = batch
     .map((m) => {
       const who = m.role === 'assistant' ? 'Assistant' : (m.from_me ? 'Owner' : 'User');
-      const body = m.text || m.caption || `[${m.msg_type}]`;
+      const body = m.text || `[${m.msg_type}]`;
       return `${who}: ${body}`;
     })
     .join('\n');

@@ -13,22 +13,54 @@
  * lock, verify whether that PID is actually still alive, and refuse to
  * start if so. On clean shutdown (SIGINT/SIGTERM) or normal exit we remove
  * our own lock.
+ *
+ * CROSS-PLATFORM NOTE: process.kill(pid, 0) is a POSIX signal-probe idiom.
+ * On Windows, Node emulates it reasonably well (ESRCH-style behavior via
+ * libuv), but the old `err.code === 'EPERM'` "must be alive" fallback is a
+ * POSIX-only assumption (a process owned by another user). On Windows,
+ * permission-denied looks different and treating it as "still alive" can
+ * wrongly refuse to start after a crash. We now branch on process.platform
+ * and use a Windows-appropriate check (tasklist) instead of guessing from
+ * signal error codes.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const config = require('../config');
 const logger = require('../utils/logger');
 
 const LOCK_PATH = path.join(path.dirname(config.storage.dbPath), 'bot.lock');
+const IS_WINDOWS = process.platform === 'win32';
 
-function isPidAlive(pid) {
+function isPidAliveWindows(pid) {
+  try {
+    // tasklist filters by PID; if the PID exists, its line appears in output.
+    const out = execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    return out.toLowerCase().includes(String(pid));
+  } catch (err) {
+    // If tasklist itself fails (e.g. missing/PATH issue), fail safe: assume
+    // NOT alive rather than blocking startup forever on an unrelated error.
+    logger.warn({ err: err.message }, 'tasklist check failed, assuming PID not alive');
+    return false;
+  }
+}
+
+function isPidAlivePosix(pid) {
   try {
     process.kill(pid, 0); // signal 0: no-op, just checks existence/permission
     return true;
   } catch (err) {
     return err.code === 'EPERM'; // exists but owned by another user - treat as alive
   }
+}
+
+function isPidAlive(pid) {
+  return IS_WINDOWS ? isPidAliveWindows(pid) : isPidAlivePosix(pid);
 }
 
 function acquireLock() {
@@ -44,9 +76,12 @@ function acquireLock() {
         `"SessionCipher" decrypt errors and reconnect loops. ` +
         `If that PID is actually dead, delete ${LOCK_PATH} and try again.`
       );
+      const killHint = IS_WINDOWS
+        ? `taskkill /PID ${existingPid} /F`
+        : `kill ${existingPid}`;
       console.error(
         `\n[FATAL] Another bot instance seems to be running (PID ${existingPid}).\n` +
-        `Run: kill ${existingPid}   (or if you're sure it's gone: rm ${LOCK_PATH})\n` +
+        `Run: ${killHint}   (or if you're sure it's gone: delete ${LOCK_PATH})\n` +
         `Then start the bot again.\n`
       );
       process.exit(1);

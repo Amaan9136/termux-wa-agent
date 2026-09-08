@@ -11,7 +11,7 @@ function match(ctx) {
 async function run(ctx) {
   const { rollingSummary, recentMessages } = memoryService.buildContext(ctx.chatJid);
   if (!rollingSummary && !recentMessages.length) return 'Nothing to summarize yet.';
-  const recentText = recentMessages.map((m) => m.text || m.caption || `[${m.msg_type}]`).join(' | ');
+  const recentText = recentMessages.map((m) => m.text || `[${m.msg_type}]`).join(' | ');
   const prompt = `Summary so far: ${rollingSummary || '(none)'}\nRecent: ${recentText}`;
   const reply = await ctx.llm.generate({
     systemPrompt: 'Summarize this chat briefly for the owner, 3-5 lines max.',

@@ -23,7 +23,7 @@ const oldestUnsummarizedStmt = db.prepare(`
 
 function addMessage({
   waMessageId, chatJid, senderJid, fromMe = false, role,
-  msgType = 'text', text = null, caption = null, mediaPath = null, meta = null, ts = Date.now(),
+  msgType = 'text', text = null, meta = null, ts = Date.now(),
 }) {
   return insertStmt.run({
     wa_message_id: waMessageId,
@@ -33,8 +33,8 @@ function addMessage({
     role,
     msg_type: msgType,
     text,
-    caption,
-    media_path: mediaPath,
+    caption: null,
+    media_path: null,
     meta_json: meta ? JSON.stringify(meta) : null,
     ts,
   });

@@ -6,15 +6,15 @@ const URL_RE = /(https?:\/\/[^\s]+)/i;
 const LIST_RE = /^\/links$/i;
 
 function match(ctx) {
-  const t = (ctx.text || '') + ' ' + (ctx.caption || '');
-  return URL_RE.test(t) || LIST_RE.test((ctx.text || '').trim());
+  const t = ctx.text || '';
+  return URL_RE.test(t) || LIST_RE.test(t.trim());
 }
 
 function autoCapture(ctx) {
-  const t = (ctx.text || '') + ' ' + (ctx.caption || '');
+  const t = ctx.text || '';
   const m = t.match(URL_RE);
   if (!m) return null;
-  links.saveLink(ctx.chatJid, m[1], ctx.caption || null);
+  links.saveLink(ctx.chatJid, m[1]);
   return m[1];
 }
 

@@ -5,7 +5,7 @@ const memoryService = require('../services/memoryService');
 const botState = require('../store/botState');
 const logger = require('../utils/logger');
 
-function formatContextPrompt({ rollingSummary, recentMessages, currentStatus, incomingText, caption }) {
+function formatContextPrompt({ rollingSummary, recentMessages, currentStatus, incomingText }) {
   const lines = [];
   if (currentStatus) lines.push(`Owner's current status: ${currentStatus}`);
   if (rollingSummary) lines.push(`Conversation summary so far:\n${rollingSummary}`);
@@ -13,10 +13,10 @@ function formatContextPrompt({ rollingSummary, recentMessages, currentStatus, in
     lines.push('Recent messages:');
     for (const m of recentMessages) {
       const who = m.role === 'assistant' ? 'Assistant' : (m.from_me ? 'Owner' : 'User');
-      lines.push(`${who}: ${m.text || m.caption || `[${m.msg_type}]`}`);
+      lines.push(`${who}: ${m.text || `[${m.msg_type}]`}`);
     }
   }
-  lines.push(`New message: ${incomingText || '(image)'}${caption ? ` (caption: ${caption})` : ''}`);
+  lines.push(`New message: ${incomingText || ''}`);
   return lines.join('\n');
 }
 
@@ -44,10 +44,9 @@ async function route(ctx) {
     recentMessages,
     currentStatus: state.current_status,
     incomingText: ctx.text,
-    caption: ctx.caption,
   });
 
-  return ctx.llm.generate({ prompt, imagePath: ctx.imagePath });
+  return ctx.llm.generate({ prompt });
 }
 
 module.exports = { route };
