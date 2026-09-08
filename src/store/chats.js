@@ -56,6 +56,10 @@ function listGroups() {
   return db.prepare('SELECT * FROM chats WHERE is_group = 1 ORDER BY updated_at DESC').all();
 }
 
+function getChat(jid) {
+  return getStmt.get(jid);
+}
+
 function isChatAllowed(chatRow) {
   if (!chatRow) return false;
   if (chatRow.blacklisted) return false;
@@ -68,5 +72,6 @@ module.exports = {
   updateChat,
   touch,
   listGroups,
+  getChat,
   isChatAllowed,
 };

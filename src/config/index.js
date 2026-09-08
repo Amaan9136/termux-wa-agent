@@ -56,7 +56,8 @@ const config = {
   },
 
   groups: {
-    defaultMode: (process.env.DEFAULT_GROUP_MODE || 'off').toLowerCase(),
+    defaultMode: (process.env.DEFAULT_GROUP_MODE || 'mention').toLowerCase(),
+    massMentionThreshold: int(process.env.GROUP_MASS_MENTION_THRESHOLD, 5),
   },
 
   logging: {

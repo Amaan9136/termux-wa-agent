@@ -1,36 +1,46 @@
 'use strict';
 
 const config = require('../config');
+const pkg = require('../../package.json');
 const messagesStore = require('../store/messages');
 const memoryNotes = require('../store/memoryNotes');
 const botState = require('../store/botState');
+const chatsStore = require('../store/chats');
+const links = require('../store/links');
+const reminders = require('../store/reminders');
+const registry = require('./commandRegistry');
+const { formatGroupList } = require('../utils/groupFormat');
 
-const HELP_TEXT = `*${config.botName}*
-Personal assistant for ${config.owner.name}.
-
-/help - this message
-/status - show bot status
-/reset - clear this chat's history
-/memory show - list saved memory notes for this chat
-/memory clear - wipe memory notes for this chat
-/group whitelist|blacklist|on|off|mention [jid] - owner only
-/brb on|off [msg] - owner only
-/status set <text> - owner only
-/links - list saved links
-remind me to X in N minutes
-remember <fact>
-summarize
-
-This is a text-only assistant - it can't read images, documents, or audio.`;
+const startedAt = Date.now();
 
 function isCommand(text) {
-  return /^\/(help|status|reset|memory)\b/i.test((text || '').trim());
+  return /^\/[a-zA-Z]/.test((text || '').trim());
+}
+
+function formatUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (mins) parts.push(`${mins}m`);
+  if (!days && !hours) parts.push(`${secs}s`);
+  return parts.join(' ');
 }
 
 async function handle(ctx) {
   const t = (ctx.text || '').trim();
 
-  if (/^\/help$/i.test(t)) return HELP_TEXT;
+  const helpMatch = t.match(/^\/help(?:\s+(\S+))?$/i);
+  if (helpMatch) {
+    const target = helpMatch[1];
+    if (!target) return registry.formatAllCommandsHelp();
+    const detail = registry.formatCommandHelp(target);
+    return detail || `Unknown command "${target}". Type /help to see everything I can do.`;
+  }
 
   if (/^\/status$/i.test(t)) {
     const s = botState.getState();
@@ -48,6 +58,8 @@ async function handle(ctx) {
     return 'Chat history cleared.';
   }
 
+  if (/^\/memory$/i.test(t)) return registry.formatCommandHelp('memory');
+
   if (/^\/memory show$/i.test(t)) {
     const notes = memoryNotes.listNotes(ctx.chatJid, 20);
     if (!notes.length) return 'No memory notes for this chat.';
@@ -59,7 +71,52 @@ async function handle(ctx) {
     return 'Memory notes cleared for this chat.';
   }
 
+  if (/^\/links$/i.test(t)) {
+    const rows = links.listLinks(ctx.chatJid, 10);
+    if (!rows.length) return 'No saved links yet.';
+    return rows.map((r) => `- ${r.url}`).join('\n');
+  }
+
+  if (/^\/groups$/i.test(t)) {
+    if (!ctx.isOwner) return 'Only the owner can list groups.';
+    return `*Known groups*\n${formatGroupList(chatsStore.listGroups())}`;
+  }
+
+  if (/^\/reminders$/i.test(t)) {
+    const rows = reminders.listUpcoming(ctx.chatJid, 10);
+    if (!rows.length) return 'No pending reminders in this chat.';
+    return rows.map((r) => `#${r.id} - ${r.text} (${new Date(r.due_at).toLocaleString()})`).join('\n');
+  }
+
+  const cancelMatch = t.match(/^\/reminders cancel (\d+)$/i);
+  if (cancelMatch) {
+    const ok = reminders.cancelReminder(parseInt(cancelMatch[1], 10), ctx.chatJid);
+    return ok
+      ? `Reminder #${cancelMatch[1]} cancelled.`
+      : `No pending reminder #${cancelMatch[1]} in this chat.`;
+  }
+
+  if (/^\/ping$/i.test(t)) {
+    return `Pong! ${config.botName} is alive.`;
+  }
+
+  if (/^\/uptime$/i.test(t)) {
+    return `Up for ${formatUptime(Date.now() - startedAt)}.`;
+  }
+
+  if (/^\/id$/i.test(t)) {
+    return [
+      `Chat: ${ctx.chatJid}`,
+      `Group: ${ctx.isGroup ? 'yes' : 'no'}`,
+      ctx.isGroup ? `Mentioned: ${ctx.mentioned ? 'yes' : 'no'}` : null,
+    ].filter(Boolean).join('\n');
+  }
+
+  if (/^\/version$/i.test(t)) {
+    return `${config.botName} v${pkg.version}\nModel: ${config.llm.textModel}`;
+  }
+
   return null;
 }
 
-module.exports = { isCommand, handle, HELP_TEXT };
+module.exports = { isCommand, handle, HELP_TEXT: registry.formatAllCommandsHelp() };

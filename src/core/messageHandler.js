@@ -9,6 +9,7 @@ const memoryService = require('../services/memoryService');
 const sendQueue = require('../core/sendQueue');
 const commands = require('../core/commands');
 const router = require('../agents/router');
+const whatsapp = require('./whatsapp');
 
 function withTimeout(promise, ms, label) {
   return Promise.race([
@@ -17,9 +18,20 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
-function isMentioned(msg, ownerNumber) {
+function isMassMention(mentionedJid, participantCount) {
+  if (mentionedJid.length < 2) return false;
+  const threshold = config.groups.massMentionThreshold;
+  if (participantCount) {
+    return mentionedJid.length >= Math.min(threshold, Math.ceil(participantCount * 0.6));
+  }
+  return mentionedJid.length >= threshold;
+}
+
+function isMentioned(msg, ownerNumber, participantCount) {
   const ctx = msg.message?.extendedTextMessage?.contextInfo;
   const mentioned = ctx?.mentionedJid || [];
+  if (!mentioned.length) return false;
+  if (isMassMention(mentioned, participantCount)) return false;
   return mentioned.some((j) => normalizeJidNumber(j) === ownerNumber);
 }
 
@@ -80,7 +92,15 @@ function buildHandler({ llm, getSock }) {
 
     if (!dedupe.markIfNew(waMessageId, chatJid)) return;
 
-    const chat = chatsStore.getOrCreateChat(chatJid, { isGroup });
+    let chat = chatsStore.getOrCreateChat(chatJid, { isGroup });
+
+    let groupMeta = null;
+    if (isGroup) {
+      groupMeta = await whatsapp.getGroupMetadata(getSock(), chatJid).catch(() => null);
+      if (groupMeta && groupMeta.subject && groupMeta.subject !== chat.name) {
+        chat = chatsStore.updateChat(chatJid, { name: groupMeta.subject });
+      }
+    }
 
     const isOwnEcho = fromMe && recentlySentIds.has(waMessageId);
 
@@ -100,7 +120,9 @@ function buildHandler({ llm, getSock }) {
     if (fromMe && !isSelfChat(chatJid, getSock(), config.owner.number)) return;
 
     const text = extracted.text || '';
-    const mentioned = isGroup ? isMentioned(msg, config.owner.number) : true;
+    const mentioned = isGroup
+      ? isMentioned(msg, config.owner.number, groupMeta && groupMeta.participantCount)
+      : true;
 
     if (isGroup) {
       if (!chatsStore.isChatAllowed(chat)) return;

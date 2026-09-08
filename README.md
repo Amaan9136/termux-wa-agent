@@ -23,6 +23,31 @@ sends it back, throttled and retried.
 
 ## CHANGELOG (this revision)
 
+- **Self-documenting commands.** `/help` now captions every
+  command; `/help <command>` (and running a command bare, or with an
+  unrecognized action, e.g. `/group`) prints that command's full usage and
+  every sub-operation instead of a terse error. Added `/groups`,
+  `/group info`, `/group list`, `/reminders`, `/reminders cancel <id>`,
+  `/ping`, `/uptime`, `/id`, `/version`. See `src/core/commandRegistry.js`.
+- **Mention-only is now the default in groups.** `DEFAULT_GROUP_MODE`
+  defaults to `mention` (was `off`): a new group stays quiet until the owner
+  is @mentioned or a `/command` is sent. A mention that tags a large chunk
+  of the group at once (`GROUP_MASS_MENTION_THRESHOLD`, default 5, or ~60%
+  of members) is treated as a broadcast/"@all"-style mention and ignored -
+  only a mention that specifically targets the owner counts.
+- **Group whitelist/blacklist now shows names, not just ids.** The bot
+  syncs each group's real WhatsApp name into its own record as messages
+  arrive, and `/group info`, `/group list`/`/groups`, and the response to
+  any `/group <action>` now show that name next to the id, so you can
+  identify and target a group by id from anywhere (including your own DM
+  or the admin CLI).
+- **More natural non-owner replies.** The system prompt for messages from
+  people other than the owner previously produced stiff, generic
+  call-center phrasing ("let me know if there's anything else I can help
+  you with", vague offers to "draft something"). It now explicitly has the
+  bot introduce itself as the owner's assistant when relevant, and offer
+  plainly to pass a message along instead of a vague generic prompt.
+
 - **Fixed: repeated/spammed alerts to the owner.** `alertOwner()` had no
   rate limiting at all - a crash loop (fatal disconnect, or repeated
   `uncaughtException`) fired one WhatsApp DM per event with zero delay,
@@ -141,8 +166,11 @@ pairing/connect, wait a few seconds before testing - the bot intentionally
 delays sends briefly while the WhatsApp session stabilizes, to avoid replies
 getting silently dropped during that window.
 
-To test group/other-contact delivery: `/group whitelist` in a group you own,
-then have someone else message or @mention the bot there.
+To test group/other-contact delivery: since new groups default to
+mention-only, `@mention` the owner in a group you're both in, or use
+`/group on <jid>` / `/group whitelist <jid>` first if you want every message
+answered. `/groups` (or `/group list`) shows the name and id of any group
+the bot has already seen a message from.
 
 ## Admin CLI
 
@@ -165,22 +193,49 @@ Edit `.env` (see `.env.example`). Key values:
 - `OWNER_NAME` - your first name, used in the system prompt and owner-facing text
 - `OWNER_BIO` - a free-form paragraph about you, folded into the system prompt for personalization
 - `OLLAMA_TEXT_MODEL` - model name as known to your Ollama instance
-- `DEFAULT_GROUP_MODE` - `off` by default; new groups are ignored until whitelisted
+- `DEFAULT_GROUP_MODE` - `mention` by default; new groups only reply when the owner is @mentioned. Set to `on` to reply to every message, or `off` to ignore new groups until whitelisted.
+- `GROUP_MASS_MENTION_THRESHOLD` - a mention is treated as a broadcast/"@all"-style mention (and ignored) once it tags this many people, or 60% of the group's members, whichever is lower. Defaults to `5`.
 - `RECENT_WINDOW_SIZE` / `SUMMARY_TRIGGER_COUNT` - tune memory size vs prompt cost
 - `ALERT_MIN_INTERVAL_MS` / `ALERT_DEDUP_WINDOW_MS` - tune how aggressively crash alerts to the owner are throttled
 
 ## Commands
 
-- `/help`, `/status`, `/reset`, `/memory show`, `/memory clear`
-- `/group whitelist|blacklist|unwhitelist|unblacklist|on|off|mention [jid]` - owner only
+Every command is self-documenting: `/help` lists all of them with a one-line
+caption, and `/help <command>` (e.g. `/help group`) prints that command's
+full usage and every sub-operation it supports. Running a command like
+`/group` on its own, or with an unrecognized action, prints that same
+detailed help automatically instead of a terse error.
+
+- `/help [command]`, `/status`, `/reset`, `/memory show`, `/memory clear`
+- `/group whitelist|blacklist|unwhitelist|unblacklist|on|off|mention|info|list [jid]` - owner only.
+  Omit `[jid]` to target the group the command is sent in. `/group info [jid]`
+  and `/group list` (or `/groups`) print each known group's **name and id**,
+  so you can copy the id to run an action on a group from elsewhere (your own
+  DM, or the admin CLI).
+- `/groups` - list every known group with its name, id and current settings (owner only)
 - `/brb on|off [message]`, `/status set <text>` - owner only
 - `/links` - list saved links for the current chat
+- `/reminders` / `/reminders cancel <id>` - list or cancel pending reminders in this chat
+- `/ping`, `/uptime`, `/id`, `/version` - quick status/diagnostic commands
 
 ## Group safety
 
-Every group defaults to `ai_enabled = 0` on first contact. Owner whitelists a
-group with `/group whitelist`. Mention-only mode (`/group mention`) makes the
-bot only respond when the owner is @mentioned or the message is a command.
+Every group defaults to `mention_only = 1` on first contact (configurable via
+`DEFAULT_GROUP_MODE`): the bot stays quiet in a new group until the owner is
+explicitly @mentioned, or a `/command` is sent. This is a per-chat setting,
+not global - use `/group on [jid]` to make a specific group reply to every
+message, or `/group off [jid]` to silence it entirely.
+
+A WhatsApp @mention that tags a large chunk of the group at once (5+ people,
+or roughly the majority of members) is treated as a broadcast-style "@all"
+mention rather than someone specifically pinging the owner, and is ignored
+for the purposes of mention-only mode - only a mention that specifically and
+narrowly tags the owner counts. Tune the cutoff with
+`GROUP_MASS_MENTION_THRESHOLD`.
+
+The bot also keeps each group's real WhatsApp name in sync automatically
+(refreshed from group metadata as messages come in), so `/group info`,
+`/group list` and `/groups` always show a human-readable name next to the id.
 
 ## Extending
 

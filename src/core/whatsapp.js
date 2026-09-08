@@ -54,6 +54,35 @@ function getSock() {
   return sockRef;
 }
 
+const groupMetaCache = new Map();
+const GROUP_META_TTL_MS = 10 * 60 * 1000;
+
+async function getGroupMetadata(sock, jid, { forceRefresh = false } = {}) {
+  const cached = groupMetaCache.get(jid);
+  if (!forceRefresh && cached && (Date.now() - cached.fetchedAt) < GROUP_META_TTL_MS) {
+    return cached;
+  }
+  if (!sock) return cached || null;
+  try {
+    const meta = await sock.groupMetadata(jid);
+    const entry = {
+      jid,
+      subject: meta.subject || null,
+      participantCount: Array.isArray(meta.participants) ? meta.participants.length : 0,
+      fetchedAt: Date.now(),
+    };
+    groupMetaCache.set(jid, entry);
+    return entry;
+  } catch (err) {
+    logger.warn({ err: err.message, jid }, 'Failed to fetch group metadata');
+    return cached || null;
+  }
+}
+
+function getCachedGroupMetadata(jid) {
+  return groupMetaCache.get(jid) || null;
+}
+
 function extractMessageContent(msg) {
   const m = msg.message;
   if (!m) return { type: 'text', text: '' };
@@ -164,4 +193,12 @@ async function sendMessageTracked(sock, jid, content) {
   return sent;
 }
 
-module.exports = { start, getSock, sendMessageTracked, isConnectionStable, waitForStableConnection };
+module.exports = {
+  start,
+  getSock,
+  sendMessageTracked,
+  isConnectionStable,
+  waitForStableConnection,
+  getGroupMetadata,
+  getCachedGroupMetadata,
+};

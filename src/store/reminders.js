@@ -13,6 +13,9 @@ const markFiredStmt = db.prepare(`UPDATE reminders SET fired = 1 WHERE id = ?`);
 const listUpcomingStmt = db.prepare(`
   SELECT * FROM reminders WHERE chat_jid = ? AND fired = 0 ORDER BY due_at ASC LIMIT ?
 `);
+const cancelStmt = db.prepare(`
+  DELETE FROM reminders WHERE id = ? AND chat_jid = ? AND fired = 0
+`);
 
 function createReminder(chatJid, ownerJid, text, dueAt) {
   const info = insertStmt.run(chatJid, ownerJid, text, dueAt, Date.now());
@@ -31,4 +34,9 @@ function listUpcoming(chatJid, limit = 10) {
   return listUpcomingStmt.all(chatJid, limit);
 }
 
-module.exports = { createReminder, getDueReminders, markFired, listUpcoming };
+function cancelReminder(id, chatJid) {
+  const info = cancelStmt.run(id, chatJid);
+  return info.changes > 0;
+}
+
+module.exports = { createReminder, getDueReminders, markFired, listUpcoming, cancelReminder };
